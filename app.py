@@ -1,0 +1,322 @@
+import asyncio
+import logging
+import os
+import random
+from datetime import datetime, timedelta
+
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+
+# Flask imports for Render Web Service
+from flask import Flask
+
+# --- CONFIGURATION ---
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    print("Error: BOT_TOKEN not found in environment variables.")
+    exit(1)
+
+# --- DATA IMPORT ---
+from data import MOVIES, is_valid_movie
+
+# --- FLASK APP SETUP (Keep Alive) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    # Running Flask on port defined by Render (default 10000 or 8000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
+
+# --- BOT & GAME STATE ---
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+
+# In-memory Game State
+# Structure: { chat_id: { 'players': [], 'current_idx': 0, 'used_movies': [], 'current_letter': '', 'timer_task': None, 'is_active': False } }
+games = {}
+
+# --- HELPER FUNCTIONS ---
+
+def get_game(chat_id):
+    return games.get(chat_id)
+
+def clean_string(text):
+    """Remove spaces and special chars to check letters"""
+    import re
+    return re.sub(r'[^a-zA-Z]', '', text).lower()
+
+def get_last_letter(movie_name):
+    cleaned = clean_string(movie_name)
+    if not cleaned:
+        return None
+    return cleaned[-1].upper()
+
+async def send_tagged_message(chat_id, user_id, text):
+    try:
+        await bot.send_message(chat_id, text)
+    except Exception as e:
+        print(f"Error sending message: {e}")
+
+async def next_turn(chat_id):
+    game = get_game(chat_id)
+    if not game or not game['is_active']:
+        return
+
+    # Check for winner (only 1 player left)
+    if len(game['players']) == 1:
+        winner = game['players'][0]
+        await bot.send_message(chat_id, f"🏆 <b>GAME OVER!</b>\n\n👑 Winner: {winner.mention_html()}\n\nCongratulations!")
+        del games[chat_id]
+        return
+
+    # Move to next player index (looping)
+    game['current_idx'] = (game['current_idx'] + 1) % len(game['players'])
+    current_player = game['players'][game['current_idx']]
+
+    # Tag the player and show the letter
+    game['current_letter'] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') if game['current_letter'] == '' else game['current_letter']
+    
+    msg = f"🎬 <b>{current_player.full_name}'s Turn!</b>\n"
+    msg += f"🔤 Send a movie starting with: <b>'{game['current_letter']}'</b>"
+    
+    await bot.send_message(chat_id, msg)
+
+    # Set Timer (20 seconds)
+    if game['timer_task']:
+        game['timer_task'].cancel()
+    
+    game['timer_task'] = asyncio.create_task(check_timeout(chat_id, game['current_idx'], 20))
+
+async def check_timeout(chat_id, expected_player_idx, timeout_seconds):
+    await asyncio.sleep(timeout_seconds)
+    
+    game = get_game(chat_id)
+    # Validate that game is still running and it's still the same player's turn
+    if game and game['is_active'] and game['current_idx'] == expected_player_idx:
+        # Time out - Eliminate player
+        eliminated_player = game['players'].pop(expected_player_idx)
+        await bot.send_message(chat_id, f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
+        
+        # Adjust index so we don't skip the next person after popping
+        game['current_idx'] = expected_player_idx - 1 
+        await next_turn(chat_id)
+
+# --- HANDLERS ---
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    text = (
+        "🎬 <b>Movie Word Chain Game</b>\n\n"
+        "📜 <b>Rules:</b>\n"
+        "1. Join with /join\n"
+        "2. Start game with /startgame\n"
+        "3. Send a movie name starting with the last letter of the previous movie.\n"
+        "4. Valid movies only (based on database).\n"
+        "5. 20 seconds per turn.\n\n"
+        "Commands:\n"
+        "/join - Join game\n"
+        "/leave - Leave game\n"
+        "/players - See players\n"
+        "/startgame - Start\n"
+        "/stopgame - Stop"
+    )
+    await message.answer(text)
+
+@dp.message(Command("join"))
+async def cmd_join(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    user_id = user.id
+
+    if not chat_id in games:
+        games[chat_id] = {
+            'players': [],
+            'used_movies': [],
+            'current_letter': '',
+            'is_active': False,
+            'timer_task': None,
+            'current_idx': 0
+        }
+    
+    game = games[chat_id]
+
+    # Check if already joined
+    for p in game['players']:
+        if p.id == user_id:
+            await message.answer("⚠️ You are already in the game!")
+            return
+
+    game['players'].append(user)
+    await message.answer(f"✅ {user.full_name} joined the game!")
+
+@dp.message(Command("leave"))
+async def cmd_leave(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    
+    game = get_game(chat_id)
+    if not game:
+        return
+
+    # Remove player
+    for i, p in enumerate(game['players']):
+        if p.id == user.id:
+            game['players'].pop(i)
+            await message.answer(f"👋 {user.full_name} left the game.")
+            
+            # If it was their turn, move to next
+            if game['is_active'] and game['current_idx'] == i:
+                 game['current_idx'] = i - 1 # Logic adjustment in next_turn
+                 await next_turn(chat_id)
+            elif game['is_active'] and game['current_idx'] > i:
+                 game['current_idx'] -= 1 # Shift index if someone before them left
+            
+            # Check win condition if empty
+            if game['is_active'] and len(game['players']) < 2:
+                await bot.send_message(chat_id, "Not enough players. Game stopped.")
+                game['is_active'] = False
+            return
+
+    await message.answer("You are not in the game.")
+
+@dp.message(Command("players"))
+async def cmd_players(message: types.Message):
+    game = get_game(message.chat.id)
+    if not game or not game['players']:
+        await message.answer("No players joined yet.")
+        return
+    
+    names = "\n".join([f"{i+1}. {p.full_name}" for i, p in enumerate(game['players'])])
+    await message.answer(f"👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
+
+@dp.message(Command("startgame"))
+async def cmd_startgame(message: types.Message):
+    chat_id = message.chat.id
+    game = get_game(chat_id)
+    
+    if not game or len(game['players']) < 2:
+        await message.answer("❌ Need at least 2 players to start! Use /join")
+        return
+    
+    if game['is_active']:
+        await message.answer("Game is already running!")
+        return
+
+    game['is_active'] = True
+    game['used_movies'] = []
+    game['current_letter'] = '' # Reset letter, will be randomized in next_turn
+    
+    await message.answer("🎲 <b>Game Started!</b>\nLet's pick who goes first...")
+    
+    # Randomize order slightly for fairness
+    random.shuffle(game['players'])
+    game['current_idx'] = -1 # Will increment to 0 in next_turn
+    
+    await next_turn(chat_id)
+
+@dp.message(Command("stopgame"))
+async def cmd_stopgame(message: types.Message):
+    chat_id = message.chat.id
+    if chat_id in games:
+        games[chat_id]['is_active'] = False
+        if games[chat_id]['timer_task']:
+            games[chat_id]['timer_task'].cancel()
+        del games[chat_id]
+        await message.answer("🛑 Game stopped.")
+    else:
+        await message.answer("No game running.")
+
+# --- GAMEPLAY LOGIC ---
+
+@dp.message()
+async def handle_game_input(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    text = message.text
+
+    game = get_game(chat_id)
+    
+    # Ignore if game not active
+    if not game or not game['is_active']:
+        return
+
+    # Check if it is this user's turn
+    current_player = game['players'][game['current_idx']]
+    if user.id != current_player.id:
+        # Optional: Warn others to wait
+        # await message.reply(f"⏳ Please wait, it's {current_player.full_name}'s turn!")
+        return
+
+    # Validation Logic
+    cleaned_name = text.strip().title()
+    
+    # 1. Check if it's a valid movie from DB
+    if not is_valid_movie(cleaned_name):
+        await message.reply("❌ Invalid or unknown movie. Try another.")
+        return
+
+    # 2. Check if already used
+    if cleaned_name in game['used_movies']:
+        await message.reply("🔄 This movie was already used! Pick another.")
+        return
+
+    # 3. Check First Letter
+    if game['current_letter']:
+        if cleaned_name[0] != game['current_letter']:
+            await message.reply(f"🔤 Must start with letter <b>'{game['current_letter']}'</b>!")
+            return
+
+    # SUCCESSFUL TURN
+    # Cancel current timer
+    if game['timer_task']:
+        game['timer_task'].cancel()
+
+    # Update State
+    game['used_movies'].append(cleaned_name)
+    last_char = get_last_letter(cleaned_name)
+    game['current_letter'] = last_char
+
+    await message.reply(f"✅ <b>{cleaned_name}</b> accepted!\n\nNext letter: <b>'{last_char}'</b>")
+
+    # Move to next player
+    await next_turn(chat_id)
+
+# --- MAIN EXECUTION ---
+
+async def main():
+    # Start Flask in a separate thread (using asyncio.create_task for non-blocking or threading)
+    # Since Flask is blocking, we run it in a standard thread
+    import threading
+    t = threading.Thread(target=run_flask)
+    t.start()
+
+    # Remove webhook (Render doesn't need it if we are polling, but webhook is preferred for Render)
+    # However, polling is easier to set up for a beginner "Web Service" hybrid on Render if just testing.
+    # Ideally on Render we use Webhook. Let's stick to POLLING for simplicity of code provided,
+    # OR implement Webhook properly. 
+    
+    # STRATEGY: Render provides a URL. We should use Webhook.
+    # But the user asked for "Flask use krke web service me".
+    # We will use Polling logic here, but Flask keeps the dyno alive.
+    # If Render requires Webhooks, this might restart often. 
+    
+    # BETTER APPROACH FOR RENDER:
+    # Use aiogram polling. Flask is just a dummy response for the health check.
+    print("Bot started polling...")
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    try:
+        # Use asyncio to run main
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
