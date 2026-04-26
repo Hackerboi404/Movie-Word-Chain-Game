@@ -89,11 +89,11 @@ async def next_turn(chat_id):
     
     await bot.send_message(chat_id, msg)
 
-    # Set Timer (20 seconds)
+    # Set Timer (35 seconds)
     if game['timer_task']:
         game['timer_task'].cancel()
     
-    game['timer_task'] = asyncio.create_task(check_timeout(chat_id, game['current_idx'], 20))
+    game['timer_task'] = asyncio.create_task(check_timeout(chat_id, game['current_idx'], 35))
 
 async def check_timeout(chat_id, expected_player_idx, timeout_seconds):
     await asyncio.sleep(timeout_seconds)
