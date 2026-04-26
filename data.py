@@ -203,8 +203,7 @@ MOVIES = [
     "Wonder Woman",
     "Wake Up Sid",
     "X Men",
-    "x-men",
-    "x-men origins",
+    "X Men Origins",
     "X Men Days of Future Past",
     "Yeh Jawaani Hai Deewani",
     "Youngistaan",
@@ -212,11 +211,10 @@ MOVIES = [
     "Zero",
     "Zootopia",
 
-    # Extra movies you added
+    # Extra movies
     "Godfather",
     "Yes Boss",
     "Tere Naam",
-    "Kabhi Khushi Kabhie Gham",
     "Dil",
     "Hum Aapke Hain Koun",
     "Deewana",
@@ -234,7 +232,6 @@ MOVIES = [
     "Warning",
     "Tubelight",
     "Thank You Dear",
-    "Bajrangi Bhaijaan",
     "I Hate Luv Storys",
     "Love in Vietnam",
     "Karate Kid",
@@ -251,9 +248,6 @@ MOVIES = [
     "Singh Is Kinng",
     "Sky Force",
     "Andolan",
-    "Sholay",
-    "PK",
-    "KGF Chapter 1",
     "Yamla Pagla Deewana",
     "Raaz",
     "Raaz 2",
@@ -263,12 +257,14 @@ MOVIES = [
     "MS Dhoni The Untold Story",
     "Hate Story",
     "Sanam Teri Kasam",
-    "Kabir Singh",
     "Imtihan",
     "Maharaja",
     "Happy New Year",
     "Island City",
 ]
+
+# --- FAST LOOKUP SET (case-insensitive) ---
+MOVIE_SET = set(m.lower() for m in MOVIES)
 
 def group_by_letter():
     grouped = {}
@@ -277,6 +273,5 @@ def group_by_letter():
         grouped.setdefault(letter, []).append(m)
     return grouped
 
-
 def is_valid_movie(name):
-    return name.strip().title() in [m.title() for m in MOVIES]
+    return name.strip().lower() in MOVIE_SET
