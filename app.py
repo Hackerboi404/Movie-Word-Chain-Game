@@ -1,34 +1,35 @@
 import os
 import random
-import time
-import threading
 import logging
+import threading
 import json
 from flask import Flask, jsonify, request, abort
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackContext, Filters
+from telegram.ext import Application
 
 # --- CONFIGURATION ---
-TOKEN = "8790186660:AAHGbgtQ6biJG7CH3J-dtpcvGgdsuNFOgrw"  # Apna Token yahan daalein
-# Note: Render wali setting mein environment variable use karna better hai: os.getenv("TOKEN")
-# Local ke liye yahan paste kar sakte hain.
+TOKEN = os.environ.get("TOKEN", "YOUR_BOT_TOKEN_HERE")  # Render env var prefer karega
 
 app = Flask(__name__)
 
-# Initialize Bot
-bot = Bot(token=TOKEN)
-dispatcher = Dispatcher(bot, None, workers=0)
+# --- SETUP TELEGRAM APPLICATION (v20+) ---
+# V20 mein Application hi base hota hai
+application = Application.builder().token(TOKEN).build()
+
+# Dispatcher access (v20 style)
+dispatcher = application.dispatcher
 
 # --- GAME STATE ---
-# Structure: { chat_id: { 'is_active': bool, 'round': int, 'current_q': (dialogue, movie), 'timer_thread': None, 'scores': {user_id: int} } }
+# Structure: { chat_id: { 'is_active': bool, 'round': int, 'current_q': (dialogue, movie), 'scores': {user_id: {'name': str, 'points': int}}, 'timer_lock': bool } }
 game_state = {}
 
-# Import Dialogues
+# --- IMPORT DIALOGUES ---
 try:
     from dialogues import DIALOGUES
 except ImportError:
-    DIALOGUES = [("Default dialogue", "Default Movie")]
-    print("dialogues.py not found!")
+    print("dialogues.py not found! Using dummy data.")
+    DIALOGUES = [("Test dialogue", "Test Movie")]
 
 # --- HELPER FUNCTIONS ---
 
@@ -36,29 +37,21 @@ def get_leaderboard_text(chat_id):
     if chat_id not in game_state:
         return "No game played yet."
     
-    scores = game_state[chat_id]['scores']
+    state = game_state[chat_id]
+    scores = state['scores']
+    
     if not scores:
         return "No scores yet!"
 
     # Sort users by score (descending)
-    sorted_scores = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    # scores dict: { user_id: {'name': 'Name', 'points': 10} }
+    sorted_scores = sorted(scores.values(), key=lambda x: x['points'], reverse=True)
     
     text = "🏆 <b>FINAL LEADERBOARD</b> 🏆\n\n"
     rank = 1
-    for user_id, score in sorted_scores:
-        # Fetching username from dictionary if available or simple ID
-        # In real app, you might need to fetch user details via API, but for simplicity we use ID
-        # Or store user names in state. Let's assume we store names in scores.
-        user_name = scores[user_id].get('name', f"User {user_id}") if isinstance(scores[user_id], dict) else f"User {user_id}"
-        
-        # Fix logic if scores dict stores just ints or dicts
-        if isinstance(scores[user_id], dict):
-            name = scores[user_id]['name']
-            pts = scores[user_id]['points']
-        else:
-            name = f"User {user_id}"
-            pts = score
-            
+    for user_data in sorted_scores:
+        name = user_data['name']
+        pts = user_data['points']
         text += f"{rank}. {name} - {pts} pts\n"
         rank += 1
         
@@ -68,21 +61,17 @@ def end_game(chat_id):
     if chat_id not in game_state:
         return
 
-    # Cancel timer if running
-    if game_state[chat_id]['timer_thread'] and game_state[chat_id]['timer_thread'].is_alive():
-        # We can't easily kill threads in Python, so we check a flag in the thread function
-        game_state[chat_id]['is_active'] = False 
-    
+    # Mark game as inactive
     game_state[chat_id]['is_active'] = False
     
     # Send Leaderboard
     lb_text = get_leaderboard_text(chat_id)
-    bot.send_message(chat_id=chat_id, text=lb_text, parse_mode='HTML')
+    application.bot.send_message(chat_id=chat_id, text=lb_text, parse_mode='HTML')
     
-    # Clear state (optional, kept for history)
-    # del game_state[chat_id]
+    # Clean up memory
+    del game_state[chat_id]
 
-def send_next_question(chat_id, context=None):
+def send_next_question(chat_id):
     if chat_id not in game_state or not game_state[chat_id]['is_active']:
         return
 
@@ -102,26 +91,32 @@ def send_next_question(chat_id, context=None):
     msg += f"🗣️ Dialogue: <i>\"{dialogue}\"</i>\n\n"
     msg += "Guess the Movie! 🧐"
     
-    bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+    application.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
 
-    # Start Timer for this round
-    # Note: Using a threading.Timer for the 30s check
+    # Start Timer for this round (30 seconds)
+    # Hum timer function ke andar check karenge ki kya answer mil gaya hai ya nahi
+    # Agar round number badh gaya ho, matlab answer mil gaya tha.
+    
     def timeout_handler():
-        # Check if game is still active
-        if chat_id in game_state and game_state[chat_id]['is_active'] and game_state[chat_id]['round'] == current_round:
-            bot.send_message(chat_id=chat_id, text="⏰ Time's up! No one guessed it.\nNext round...")
+        # Check if game is still active and round hasn't changed (meaning answer wasn't given)
+        if chat_id in game_state and \
+           game_state[chat_id]['is_active'] and \
+           game_state[chat_id]['round'] == current_round:
+            
+            application.bot.send_message(chat_id=chat_id, text="⏰ Time's up! No one guessed it.\nNext round...")
+            
+            # Move to next round
             game_state[chat_id]['round'] += 1
             send_next_question(chat_id)
 
-    # Schedule the timeout
+    # Schedule the timeout (30.0 seconds)
     t = threading.Timer(30.0, timeout_handler)
     t.start()
-    state['timer_thread'] = t
 
 
 # --- COMMAND HANDLERS ---
 
-def start_game(update, context):
+def start_game(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     
     # Check if game is already running
@@ -136,14 +131,13 @@ def start_game(update, context):
         'is_active': True,
         'round': 1,
         'current_q': None,
-        'timer_thread': None,
-        'scores': {} # user_id: {'name': str, 'points': int}
+        'scores': {} 
     }
     
     # Start First Question
     send_next_question(chat_id)
 
-def help_cmd(update, context):
+def help_cmd(update: Update, context: CallbackContext):
     text = (
         "<b>How to Play:</b>\n"
         "1. Type <code>/playgame</code> to start.\n"
@@ -157,7 +151,7 @@ def help_cmd(update, context):
 
 # --- MESSAGE HANDLERS (GUESSING) ---
 
-def handle_guess(update, context):
+def handle_guess(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     user = update.effective_user
     
@@ -169,14 +163,13 @@ def handle_guess(update, context):
     state = game_state[chat_id]
     correct_movie = state['current_q'][1].lower()
 
-    # Logic to check guess (Partial matching allowed, e.g. "dilwale" for "dilwale dulhania")
-    # We check if the user's guess is contained in the correct movie name OR vice versa
+    # Logic: Agar guess correct movie mein hai ya correct movie guess mein hai
     if guess in correct_movie or correct_movie in guess:
         
         # Correct Answer!
         
-        # 1. Stop the timer for this round (by marking answer given or checking round change)
-        # Since threads are hard to kill, we simply check inside the timeout handler if the round changed.
+        # 1. Update Round (This stops the timer automatically)
+        state['round'] += 1
         
         # 2. Award Points
         user_id = user.id
@@ -196,14 +189,14 @@ def handle_guess(update, context):
         context.bot.send_message(chat_id=chat_id, text=reply, parse_mode='HTML')
         
         # 4. Move to next round
-        state['round'] += 1
         send_next_question(chat_id)
-
-    # else: Wrong answer, ignore to avoid spam
+    else:
+        # Wrong answer, ignore (spam prevention)
+        pass
 
 
 # --- ERROR HANDLING ---
-def error(update, context):
+def error(update: Update, context: CallbackContext):
     logger = logging.getLogger(__name__)
     logger.warning('Update "%s" caused error "%s"', update, context.error)
 
@@ -216,9 +209,13 @@ def index():
 
 @app.route(f"/{TOKEN}", methods=['POST'])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
-    return jsonify({"status": "ok"})
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = Update.de_json(json_string, application.bot)
+        dispatcher.process_update(update)
+        return jsonify({"status": "ok"})
+    else:
+        abort(403)
 
 # --- SETUP ---
 dispatcher.add_handler(CommandHandler("start", help_cmd))
@@ -230,4 +227,9 @@ dispatcher.add_error_handler(error)
 
 if __name__ == '__main__':
     # Run the app
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    # Note: v20 doesn't use start_polling here, webhook is handled by route
+    # Hum logging bhi on kar sakte hain
+    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+    
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
