@@ -36,5 +36,27 @@ DIALOGUES = [
     ("Padosi ek se dabav toh nahi dega...", "Munnabhai MBBS"),
     ("Chamkiladi...", "Andhadhun"),
     ("Main chup rahoongi, main gungunaa rahoongi...", "Raazi"),
-    ("Mard Ko Dard Nahi Hota", "Mard Ko Dard Nahi Hota")
+    ("Mard Ko Dard Nahi Hota", "Mard Ko Dard Nahi Hota"),
+
+    # 🔥 Newly Added Dialogues
+    ("Bade bade deshon mein aisi choti choti baatein hoti rehti hain...", "Dilwale Dulhania Le Jayenge"),
+    ("Rahul, naam toh suna hoga...", "Dil To Pagal Hai"),
+    ("Main apni favourite hoon...", "Jab We Met"),
+    ("Tumse na ho payega...", "Gangs of Wasseypur"),
+    ("How’s the josh? High sir!", "Uri: The Surgical Strike"),
+    ("Kehte hain agar kisi cheez ko dil se chaho...", "Om Shanti Om"),
+    ("Vijay Dinanath Chauhan. Poora naam.", "Agneepath"),
+    ("Don ka intezaar toh gyarah mulkon ki police kar rahi hai...", "Don"),
+    ("Mere paas gaadi hai, bangla hai, paisa hai… tumhare paas kya hai?", "Deewaar"),
+    ("Kuch kuch hota hai Rahul, tum nahi samjhoge...", "Kuch Kuch Hota Hai"),
+    ("Dil toh bachcha hai ji...", "Ishqiya"),
+    ("Naam hai Bulla, rakhta hoon khulla...", "Gunda"),
+    ("Crime master Gogo naam hai mera...", "Andaz Apna Apna"),
+    ("Teja main hoon, mark idhar hai...", "Andaz Apna Apna"),
+    ("Zindagi ek baar milti hai...", "Zindagi Na Milegi Dobara"),
+    ("Ek baar jo maine commitment kar di...", "Wanted"),
+    ("Dosti ka ek usool hai madam — no sorry, no thank you...", "Maine Pyar Kiya"),
+    ("Aata majhi satakli!", "Singham"),
+    ("Picture abhi baaki hai mere dost...", "Om Shanti Om"),
+    ("All is well...", "3 Idiots")
 ]
