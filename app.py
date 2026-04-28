@@ -2,12 +2,14 @@ import asyncio
 import logging
 import os
 import random
+import re
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+# Flask imports for Render Web Service
 from flask import Flask
 
 # --- CONFIGURATION ---
@@ -17,9 +19,9 @@ if not BOT_TOKEN:
     exit(1)
 
 # --- DATA IMPORT ---
-from data import MOVIES, is_valid_movie
+from data import MOVIES
 
-# --- FLASK ---
+# --- FLASK APP SETUP (Keep Alive) ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -30,208 +32,267 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, use_reloader=False)
 
-# --- BOT ---
+# --- BOT & GAME STATE ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
+# In-memory Game State
 games = {}
 
-# --- HELPERS ---
+# --- HELPER FUNCTIONS ---
+
 def get_game(chat_id):
     return games.get(chat_id)
 
 def clean_string(text):
-    import re
+    """Remove spaces and special chars to check letters"""
     return re.sub(r'[^a-zA-Z]', '', text).lower()
 
 def get_last_letter(movie_name):
     cleaned = clean_string(movie_name)
-    return cleaned[-1].upper() if cleaned else None
+    if not cleaned:
+        return None
+    return cleaned[-1].upper()
 
-# --- GAME LOGIC ---
+def normalize_movie(name):
+    """
+    Normalize movie name for comparison.
+    1. Strip whitespace.
+    2. Convert to Title Case (e.g., golmaal -> Golmaal).
+    """
+    return name.strip().title()
+
 async def next_turn(chat_id):
     game = get_game(chat_id)
     if not game or not game['is_active']:
         return
 
+    # Check for winner (only 1 player left)
     if len(game['players']) == 1:
         winner = game['players'][0]
-        await bot.send_message(chat_id, f"🏆 Winner: {winner.mention_html()}")
+        await bot.send_message(chat_id, f"🏆 <b>GAME OVER!</b>\n\n👑 Winner: {winner.mention_html()}\n\nCongratulations!")
         del games[chat_id]
         return
 
+    # Move to next player index (looping)
     game['current_idx'] = (game['current_idx'] + 1) % len(game['players'])
-    player = game['players'][game['current_idx']]
+    current_player = game['players'][game['current_idx']]
 
-    if game['current_letter'] == '':
-        game['current_letter'] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    # Tag the player and show the letter
+    game['current_letter'] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') if game['current_letter'] == '' else game['current_letter']
+    
+    msg = f"🎬 <b>{current_player.full_name}'s Turn!</b>\n"
+    msg += f"🔤 Send a movie starting with: <b>'{game['current_letter']}'</b>"
+    
+    await bot.send_message(chat_id, msg)
 
-    await bot.send_message(
-        chat_id,
-        f"🎬 {player.full_name}'s Turn\n🔤 Letter: <b>{game['current_letter']}</b>"
-    )
-
+    # Set Timer (35 seconds - INCREASED)
     if game['timer_task']:
         game['timer_task'].cancel()
-
+    
     game['timer_task'] = asyncio.create_task(check_timeout(chat_id, game['current_idx'], 35))
 
-
-async def check_timeout(chat_id, idx, time):
-    await asyncio.sleep(time)
+async def check_timeout(chat_id, expected_player_idx, timeout_seconds):
+    await asyncio.sleep(timeout_seconds)
+    
     game = get_game(chat_id)
-
-    if game and game['is_active'] and game['current_idx'] == idx:
-        out = game['players'].pop(idx)
-        await bot.send_message(chat_id, f"⏱️ {out.full_name} out!")
-
-        game['current_idx'] = idx - 1
+    # Validate that game is still running and it's still the same player's turn
+    if game and game['is_active'] and game['current_idx'] == expected_player_idx:
+        # Time out - Eliminate player
+        eliminated_player = game['players'].pop(expected_player_idx)
+        await bot.send_message(chat_id, f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
+        
+        # Adjust index so we don't skip the next person after popping
+        game['current_idx'] = expected_player_idx - 1 
         await next_turn(chat_id)
 
-# --- COMMANDS ---
+# --- HANDLERS ---
 
 @dp.message(Command("start"))
-async def start(msg: types.Message):
-    await msg.answer(
-        "🎬 Movie Game\n\n"
-        "Use:\n"
-        "/join\n"
-        "/playgame\n"
-        "/leave\n"
-        "/players\n"
-        "/stopgame"
+async def cmd_start(message: types.Message):
+    text = (
+        "🎬 <b>Movie Word Chain Game</b>\n\n"
+        "📜 <b>Rules:</b>\n"
+        "1. Join with /join\n"
+        "2. Start game with /startgame\n"
+        "3. Send a movie name starting with the last letter of the previous movie.\n"
+        "4. Valid movies only (based on database).\n"
+        "5. <b>35 seconds</b> per turn.\n\n"
+        "Commands:\n"
+        "/join - Join game\n"
+        "/leave - Leave game\n"
+        "/players - See players\n"
+        "/startgame - Start\n"
+        "/stopgame - Stop"
     )
+    await message.answer(text)
 
 @dp.message(Command("join"))
-async def join(msg: types.Message):
-    chat = msg.chat.id
-    user = msg.from_user
+async def cmd_join(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    user_id = user.id
 
-    if chat not in games:
-        games[chat] = {
+    if not chat_id in games:
+        games[chat_id] = {
             'players': [],
-            'used_movies': [],
+            'used_movies': [], # Will store normalized names (Title Case)
             'current_letter': '',
             'is_active': False,
             'timer_task': None,
             'current_idx': 0
         }
+    
+    game = games[chat_id]
 
-    game = games[chat]
-
-    if any(p.id == user.id for p in game['players']):
-        await msg.answer("Already joined")
-        return
+    # Check if already joined
+    for p in game['players']:
+        if p.id == user_id:
+            await message.answer("⚠️ You are already in the game!")
+            return
 
     game['players'].append(user)
-    await msg.answer(f"✅ {user.full_name} joined")
+    await message.answer(f"✅ {user.full_name} joined the game!")
 
-# ✅ FIXED PART HERE
-@dp.message(Command("playgame"))
-async def play(msg: types.Message):
-    chat = msg.chat.id
-    game = get_game(chat)
-
-    # if no game created yet
+@dp.message(Command("leave"))
+async def cmd_leave(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    
+    game = get_game(chat_id)
     if not game:
-        await msg.answer(
-            "❌ <b>No players yet!</b>\n\n"
-            "👉 Use /join to join the game\n"
-            "👥 Minimum players required: 2"
-        )
         return
 
-    # if less than 2 players
-    if len(game['players']) < 2:
-        await msg.answer(
-            "❌ <b>Not enough players!</b>\n\n"
-            "👉 Ask others to /join\n"
-            "👥 Minimum players required: 2"
-        )
-        return
+    # Remove player
+    for i, p in enumerate(game['players']):
+        if p.id == user.id:
+            game['players'].pop(i)
+            await message.answer(f"👋 {user.full_name} left the game.")
+            
+            # If it was their turn, move to next
+            if game['is_active'] and game['current_idx'] == i:
+                 game['current_idx'] = i - 1 # Logic adjustment in next_turn
+                 await next_turn(chat_id)
+            elif game['is_active'] and game['current_idx'] > i:
+                 game['current_idx'] -= 1 # Shift index if someone before them left
+            
+            # Check win condition if empty
+            if game['is_active'] and len(game['players']) < 2:
+                await bot.send_message(chat_id, "Not enough players. Game stopped.")
+                game['is_active'] = False
+            return
 
+    await message.answer("You are not in the game.")
+
+@dp.message(Command("players"))
+async def cmd_players(message: types.Message):
+    game = get_game(message.chat.id)
+    if not game or not game['players']:
+        await message.answer("No players joined yet.")
+        return
+    
+    names = "\n".join([f"{i+1}. {p.full_name}" for i, p in enumerate(game['players'])])
+    await message.answer(f"�👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
+
+@dp.message(Command("startgame"))
+async def cmd_startgame(message: types.Message):
+    chat_id = message.chat.id
+    game = get_game(chat_id)
+    
+    if not game or len(game['players']) < 2:
+        await message.answer("❌ Need at least 2 players to start! Use /join")
+        return
+    
     if game['is_active']:
-        await msg.answer("Game already running")
+        await message.answer("Game is already running!")
         return
 
     game['is_active'] = True
     game['used_movies'] = []
-    game['current_letter'] = ''
-
+    game['current_letter'] = '' 
+    
+    await message.answer("🎲 <b>Game Started!</b>\nLet's pick who goes first...")
+    
     random.shuffle(game['players'])
-    game['current_idx'] = -1
-
-    await msg.answer("🎲 Game Started!")
-    await next_turn(chat)
-
-@dp.message(Command("players"))
-async def players(msg: types.Message):
-    game = get_game(msg.chat.id)
-    if not game or not game['players']:
-        await msg.answer("No players")
-        return
-
-    text = "\n".join([p.full_name for p in game['players']])
-    await msg.answer(text)
-
-@dp.message(Command("leave"))
-async def leave(msg: types.Message):
-    game = get_game(msg.chat.id)
-    if not game:
-        return
-
-    game['players'] = [p for p in game['players'] if p.id != msg.from_user.id]
-    await msg.answer("Left game")
+    game['current_idx'] = -1 
+    
+    await next_turn(chat_id)
 
 @dp.message(Command("stopgame"))
-async def stop(msg: types.Message):
-    if msg.chat.id in games:
-        del games[msg.chat.id]
-        await msg.answer("Game stopped")
+async def cmd_stopgame(message: types.Message):
+    chat_id = message.chat.id
+    if chat_id in games:
+        games[chat_id]['is_active'] = False
+        if games[chat_id]['timer_task']:
+            games[chat_id]['timer_task'].cancel()
+        del games[chat_id]
+        await message.answer("🛑 Game stopped.")
+    else:
+        await message.answer("No game running.")
 
-# --- GAME INPUT ---
+# --- GAMEPLAY LOGIC ---
+
 @dp.message()
-async def game(msg: types.Message):
-    game = get_game(msg.chat.id)
+async def handle_game_input(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    text = message.text
+
+    game = get_game(chat_id)
+    
     if not game or not game['is_active']:
         return
 
-    player = game['players'][game['current_idx']]
-    if msg.from_user.id != player.id:
+    # Check if it is this user's turn
+    current_player = game['players'][game['current_idx']]
+    if user.id != current_player.id:
         return
 
-    name = msg.text.strip()
-    norm = name.lower()
-
-    if not is_valid_movie(norm):
-        await msg.reply("Invalid movie")
+    # Normalization logic: "golmaal" becomes "Golmaal"
+    normalized_name = normalize_movie(text)
+    
+    # 1. Check if it's a valid movie from DB
+    # The MOVIES list in data.py is Title Case, so direct check works
+    if normalized_name not in MOVIES:
+        await message.reply("❌ Invalid or unknown movie. Try another.")
         return
 
-    if norm in game['used_movies']:
-        await msg.reply("Already used")
+    # 2. Check if already used
+    if normalized_name in game['used_movies']:
+        await message.reply("🔄 This movie was already used! Pick another.")
         return
 
+    # 3. Check First Letter
+    # We compare the first letter of normalized name (Title Case) vs current letter
     if game['current_letter']:
-        if name[0].upper() != game['current_letter']:
-            await msg.reply(f"Use letter {game['current_letter']}")
+        if normalized_name[0] != game['current_letter']:
+            await message.reply(f"🔤 Must start with letter <b>'{game['current_letter']}'</b>!")
             return
 
+    # SUCCESSFUL TURN
     if game['timer_task']:
         game['timer_task'].cancel()
 
-    game['used_movies'].append(norm)
-    last = get_last_letter(name)
-    game['current_letter'] = last
+    game['used_movies'].append(normalized_name)
+    last_char = get_last_letter(normalized_name)
+    game['current_letter'] = last_char
 
-    await msg.reply(f"✅ {name}\nNext: {last}")
-    await next_turn(msg.chat.id)
+    await message.reply(f"✅ <b>{normalized_name}</b> accepted!\n\nNext letter: <b>'{last_char}'</b>")
 
-# --- MAIN ---
+    await next_turn(chat_id)
+
+# --- MAIN EXECUTION ---
+
 async def main():
     import threading
-    threading.Thread(target=run_flask).start()
+    t = threading.Thread(target=run_flask)
+    t.start()
+    print("Bot started polling with 35s timer...")
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
