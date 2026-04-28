@@ -1,4 +1,2 @@
-aiogram==3.4.1
-flask==3.0.0
-pyrogram
-TgCrypto
+flask
+python-telegram-bot
