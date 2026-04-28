@@ -86,7 +86,7 @@ async def next_turn(chat_id):
     
     await bot.send_message(chat_id, msg)
 
-    # Set Timer (35 seconds - INCREASED)
+    # Set Timer (35 seconds)
     if game['timer_task']:
         game['timer_task'].cancel()
     
@@ -114,7 +114,7 @@ async def cmd_start(message: types.Message):
         "🎬 <b>Movie Word Chain Game</b>\n\n"
         "📜 <b>Rules:</b>\n"
         "1. Join with /join\n"
-        "2. Start game with /startgame\n"
+        "2. Start game with <b>/playgame</b>\n"  # Updated text
         "3. Send a movie name starting with the last letter of the previous movie.\n"
         "4. Valid movies only (based on database).\n"
         "5. <b>35 seconds</b> per turn.\n\n"
@@ -122,7 +122,7 @@ async def cmd_start(message: types.Message):
         "/join - Join game\n"
         "/leave - Leave game\n"
         "/players - See players\n"
-        "/startgame - Start\n"
+        "/playgame - Start Game\n" # Updated command list
         "/stopgame - Stop"
     )
     await message.answer(text)
@@ -192,10 +192,10 @@ async def cmd_players(message: types.Message):
         return
     
     names = "\n".join([f"{i+1}. {p.full_name}" for i, p in enumerate(game['players'])])
-    await message.answer(f"�👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
+    await message.answer(f"👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
 
-@dp.message(Command("startgame"))
-async def cmd_startgame(message: types.Message):
+@dp.message(Command("playgame")) # CHANGED FROM startgame to playgame
+async def cmd_playgame(message: types.Message):
     chat_id = message.chat.id
     game = get_game(chat_id)
     
