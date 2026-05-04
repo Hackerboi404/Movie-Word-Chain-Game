@@ -12,10 +12,10 @@ MOVIES = [
     "Captain America Civil War", "Captain America Winter Soldier", "Coco", "Conjuring", "Chennai Express", "Chak De India", "Cinderella", "Catch Me If You Can", "Casino", "Cast Away", "Coolie No 1", "Chandni Chowk To China", "Cocktail", "Chhichhore", "Chennai 600028", "CityLights", "Commando", "Cheeni Kum", "Chalte Chalte", "Carry On Jatta", "Chhello Divas", "Chup", "Champion", "Chandni", "Captain Phillips", "Cellular",
     
     # D
-    "Dark Knight", "Dark Knight Rises", "Drishyam", "Drishyam 2", "Dangal", "Dilwale Dulhania Le Jayenge", "Dil Chahta Hai", "Don", "Don 2", "Dhoom", "Dhoom 2", "Dhoom 3", "Devdas", "Doctor Strange", "Deadpool", "Django Unchained", "Dabangg", "Dabangg 2", "Dabangg 3", "Dilwale", "Dear Zindagi", "Dostana", "Delhi Belly", "Dunki", "Dream Girl", "Drive", "Deewaar", "Dil Se", "Dil To Pagal Hai", "Dil Hai Ke Manta Nahin", "Daawat E Ishq", "Desi Boyz", "Double Dhamaal", "Dil Maange More",
+    "Dark Knight", "dhol", "dunki", "dil", "Dark Knight Rises", "Drishyam", "Drishyam 2", "Dangal", "Dilwale Dulhania Le Jayenge", "Dil Chahta Hai", "Don", "Don 2", "Dhoom", "Dhoom 2", "Dhoom 3", "Devdas", "Doctor Strange", "Deadpool", "Django Unchained", "Dabangg", "Dabangg 2", "Dabangg 3", "Dilwale", "Dear Zindagi", "Dostana", "Delhi Belly", "Dunki", "Dream Girl", "Drive", "Deewaar", "Dil Se", "Dil To Pagal Hai", "Dil Hai Ke Manta Nahin", "Daawat E Ishq", "Desi Boyz", "Double Dhamaal", "Dil Maange More",
     
     # E
-    "Eega", "E T", "Exorcist", "Enthiran", "Entertainment" "Edge of Tomorrow", "English Vinglish", "Ek Tha Tiger", "Ek Villain", "Ek Main Aur Ekk Tu", "Extraordinary Measures", "Ek Chhotisi Love Story", "English Babu Desi Mem", "Elite", "Escape Plan", "Erin Brockovich", "Eight Mile", "Enemy", "Ek Tha Raja", "Ek Doctor Ki Maut", "Everything Everywhere All At Once",
+    "Eega", "E T", "Exorcist", "Enthiran", "Entertainment", "Edge of Tomorrow", "English Vinglish", "Ek Tha Tiger", "Ek Villain", "Ek Main Aur Ekk Tu", "Extraordinary Measures", "Ek Chhotisi Love Story", "English Babu Desi Mem", "Elite", "Escape Plan", "Erin Brockovich", "Eight Mile", "Enemy", "Ek Tha Raja", "Ek Doctor Ki Maut", "Everything Everywhere All At Once",
     
     # F
     "Forrest Gump", "Fast and Furious", "Furious 7", "Fast Five", "Finding Nemo", "Frozen", "Frozen 2", "Fan", "Fifty Shades of Grey", "Fanaa", "Fukrey", "Fukrey Returns", "Fight Club", "Fantastic Beasts", "Fantastic Four", "Fireproof", "Field of Dreams", "Final Destination", "First Blood", "Forrest Gump", "Fly Away", "Fida", "Family", "Faltu", "Free Guy", "Fitoor",
@@ -42,7 +42,7 @@ MOVIES = [
     "Mission Impossible", "Mission Impossible Fallout", "Matrix", "Matrix Reloaded", "Matrix Revolutions", "Mardaani", "Munna Bhai MBBS", "Moana", "My Name is Khan", "Mughal E Azam", "Mad Max", "Mad Max Fury Road", "Maleficent", "Mary Kom", "Manjhi The Mountain Man", "Mela", "Masti", "Mumbai Meri Jaan", "Madras Cafe", "Masaan", "M.S. Dhoni", "Madamji", "Mukkabaaz", "Mimi", "Made in China", "Malang", "Mela 2", "Mere Brother Ki Dulhan", "Mere Yaar Ki Shaadi Hai", "Mom", "Mughal-e-Azam", "Mujhse Dosti Karoge", "Munnabhai",
     
     # N
-    "Night at the Museum", "Neerja", "Notting Hill", "No Time To Die", "Nayak", "Na Tum Jaano Na Hum", "Naan Aanaiyittal", "Nayak The Real Hero", "Newton", "No One Killed Jessica", "Nishabd", "Namastey London", "New York", "No Entry", "No Problem", "No Smoking", "Nautanki Saala", "Ninja Assassin", "Now You See Me", "Now You See Me 2", "Nebraska", "Nil Battey Sannata", "Neru", "NH10", "Namaste England", "Nishabdham",
+    "Night at the Museum", "nayak", "nagina", "Neerja", "Notting Hill", "No Time To Die", "Nayak", "Na Tum Jaano Na Hum", "Naan Aanaiyittal", "Nayak The Real Hero", "Newton", "No One Killed Jessica", "Nishabd", "Namastey London", "New York", "No Entry", "No Problem", "No Smoking", "Nautanki Saala", "Ninja Assassin", "Now You See Me", "Now You See Me 2", "Nebraska", "Nil Battey Sannata", "Neru", "NH10", "Namaste England", "Nishabdham",
     
     # O
     "Om Shanti Om", "Oppenheimer", "Oldboy", "October", "Ok Jaanu", "Oh My God", "Oye Lucky Lucky Oye", "Once Upon A Time In Mumbai", "Once Upon A Time In Mumbai Dobaara", "Once Upon A Time In America", "Outsourced", "Open Season", "Office Space", "Our Family Wedding", "Outbreak", "One Night At McCools", "Only You", "Out of the Furnace", "Ocean's Eleven", "Ocean's Twelve", "Ocean's Thirteen", "O Brother Where Art Thou", "On the Waterfront", "Ordinary People", "Other Guys",
@@ -54,7 +54,7 @@ MOVIES = [
     "Qayamat Se Qayamat Tak", "Queen of Katwe", "Quantum of Solace", "Quest for Camelot", "Quarantine", "Quick Change", "Quills", "Quiz Show", "Quo Vadis", "Question Mark", "Qissa", "Quicksand",
     
     # R
-    "Rockstar", "Rang De Basanti", "Raazi", "Raees", "Rambo", "Rocky", "RRR", "Robot", "Ready", "Race", "Race 2", "Race 3", "Raid", "Raja Hindustani", "Raja Natwarlal", "Raja Ki Aayegi Baraat", "Rangoon", "R...Rajkumar", "Rustom", "Rab Ne Bana Di Jodi", "Rehnaa Hai Terre Dil Mein", "Raat", "Raja", "Raja Hindustani", "Rocky Handsome", "Rann", "Rocket Singh Salesman", "Roja", "Rog", "Run", "Rudaali", "Rush", "Rush Hour", "Rush Hour 2", "Rush Hour 3", "Robot 2.0", "Romeo Akbar Walter",
+    "Rockstar", "Ra.One", "Rang De Basanti", "Raazi", "Raees", "Rambo", "Rocky", "RRR", "Robot", "Ready", "Race", "Race 2", "Race 3", "Raid", "Raja Hindustani", "Raja Natwarlal", "Raja Ki Aayegi Baraat", "Rangoon", "R...Rajkumar", "Rustom", "Rab Ne Bana Di Jodi", "Rehnaa Hai Terre Dil Mein", "Raat", "Raja", "Raja Hindustani", "Rocky Handsome", "Rann", "Rocket Singh Salesman", "Roja", "Rog", "Run", "Rudaali", "Rush", "Rush Hour", "Rush Hour 2", "Rush Hour 3", "Robot 2.0", "Romeo Akbar Walter",
     
     # S
     "Sholay", "Singham", "Singham Returns", "Simmba", "Sooryavanshi", "Sultan", "Stree", "Sanju", "Swades", "Shutter Island", "Skyfall", "Spider Man Homecoming", "Spider Man No Way Home", "Spider Man Far From Home", "Saving Private Ryan", "Scream", "Sultan", "Satyameva Jayate", "Special 26", "Swades", "Sarkar", "Sarkar 2", "Sarkar 3", "Sonu Ke Titu Ki Sweety", "Sonchiriya", "Super 30", "Shubh Mangal Saavdhan", "Stree", "Saheb Biwi Aur Gangster", "Saheb Biwi Aur Gangster Returns", "Saand Ki Aankh", "Shubh Mangal Zyada Saavdhan", "Sanam Teri Kasam", "Sadak", "Sadak 2", "Shararat", "Shaadi Se Pehle", "Shaadi Ke Side Effects", "Shaadi Mein Zaroor Aana", "Shubho Druto", "Student of the Year", "Student of the Year 2", "Sui Dhaaga", "Suryavanshi", "Surya", "Satya", "Saudagar", "Sir", "Sarbjit", "Sanam Teri Kasam", "Silsila", "Satyameva Jayate",
@@ -72,7 +72,7 @@ MOVIES = [
     "War", "Whiplash", "Wolf of Wall Street", "Wonder Woman", "Wake Up Sid", "Welcome", "Welcome Back", "Wanted", "Wasseypur", "Wedding Pullav", "What Women Want", "We Are Family", "Waqt The Race Against Time", "Water", "Wanted Dead or Alive", "Watchmen", "Wreck-It Ralph", "Wrong Turn", "Who Am I", "White House Down", "World War Z", "Wazir", "Warrior", "Wedding Season", "Wrestling",
     
     # X
-    "X Men", "X Men Origins", "X Men Days of Future Past", "X Men First Class", "X Men Last Stand", "X Men Apocalypse", "X Men Dark Phoenix", "X Ray",
+    "X Men", "xtro", "xenia", "x y & zee", "x", "X Men Origins", "X Men Days of Future Past", "x ray", "X Men First Class", "X Men Last Stand", "X Men Apocalypse", "X Men Dark Phoenix", "X Ray", "xetox",
     
     # Y
     "Yeh Jawaani Hai Deewani", "Youngistaan", "Zindagi Na Milegi Dobara", "Yuva", "Yes Boss", "Yeh Dil", "Yeh Dillagi", "Yeh Jawaani Hai Deewani", "Yakeen", "Yaadien", "Yatra", "Yaraana", "Yamla Pagla Deewana", "Yaadein", "Yaariyan", "Yeh Hai Jalwa", "Yeh Khula Aasmaan", "Yeh Rishta Kya Kehlata Hai", "Yeh Saali Zindagi", "Yeh Silli Zindagi", "Yuvvraaj", "Yeh Jo Mohabbat Hai",
