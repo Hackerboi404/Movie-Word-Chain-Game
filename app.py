@@ -19,7 +19,8 @@ if not BOT_TOKEN:
     exit(1)
 
 # --- DATA IMPORT ---
-from data import MOVIES
+# Hum MOVIE_SET import karenge (jo lowercase set hai) taaki comparison fast aur accurate ho
+from data import MOVIE_SET, MOVIES
 
 # --- FLASK APP SETUP (Keep Alive) ---
 app = Flask(__name__)
@@ -58,7 +59,7 @@ def normalize_movie(name):
     """
     Normalize movie name for comparison.
     1. Strip whitespace.
-    2. Convert to Title Case (e.g., golmaal -> Golmaal).
+    2. Convert to Title Case (e.g., golmaal -> Golmaal) - Used for display only.
     """
     return name.strip().title()
 
@@ -100,7 +101,7 @@ async def check_timeout(chat_id, expected_player_idx, timeout_seconds):
     if game and game['is_active'] and game['current_idx'] == expected_player_idx:
         # Time out - Eliminate player
         eliminated_player = game['players'].pop(expected_player_idx)
-        await bot.send_message(chat_id, f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
+        await message.reply(f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
         
         # Adjust index so we don't skip the next person after popping
         game['current_idx'] = expected_player_idx - 1 
@@ -114,7 +115,7 @@ async def cmd_start(message: types.Message):
         "🎬 <b>Movie Word Chain Game</b>\n\n"
         "📜 <b>Rules:</b>\n"
         "1. Join with /join\n"
-        "2. Start game with <b>/playgame</b>\n"  # Updated text
+        "2. Start game with <b>/playgame</b>\n"
         "3. Send a movie name starting with the last letter of the previous movie.\n"
         "4. Valid movies only (based on database).\n"
         "5. <b>35 seconds</b> per turn.\n\n"
@@ -122,7 +123,7 @@ async def cmd_start(message: types.Message):
         "/join - Join game\n"
         "/leave - Leave game\n"
         "/players - See players\n"
-        "/playgame - Start Game\n" # Updated command list
+        "/playgame - Start Game\n"
         "/stopgame - Stop"
     )
     await message.answer(text)
@@ -194,7 +195,7 @@ async def cmd_players(message: types.Message):
     names = "\n".join([f"{i+1}. {p.full_name}" for i, p in enumerate(game['players'])])
     await message.answer(f"👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
 
-@dp.message(Command("playgame")) # CHANGED FROM startgame to playgame
+@dp.message(Command("playgame"))
 async def cmd_playgame(message: types.Message):
     chat_id = message.chat.id
     game = get_game(chat_id)
@@ -248,16 +249,16 @@ async def handle_game_input(message: types.Message):
     if user.id != current_player.id:
         return
 
-    # Normalization logic: "golmaal" becomes "Golmaal"
+    # Normalization logic: "golmaal" becomes "Golmaal" (for display)
     normalized_name = normalize_movie(text)
     
-    # 1. Check if it's a valid movie from DB
-    # The MOVIES list in data.py is Title Case, so direct check works
-    if normalized_name not in MOVIES:
+    # 1. Check if it's a valid movie from DB using SET (Case Insensitive)
+    # "Titanic", "titanic", "TITANIC" -> .lower() -> check in MOVIE_SET
+    if text.strip().lower() not in MOVIE_SET:
         await message.reply("❌ Invalid or unknown movie. Try another.")
         return
 
-    # 2. Check if already used
+    # 2. Check if already used (Compare normalized titles)
     if normalized_name in game['used_movies']:
         await message.reply("🔄 This movie was already used! Pick another.")
         return
