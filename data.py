@@ -15,7 +15,7 @@ MOVIES = [
     "Dark Knight", "Dark Knight Rises", "Drishyam", "Drishyam 2", "Dangal", "Dilwale Dulhania Le Jayenge", "Dil Chahta Hai", "Don", "Don 2", "Dhoom", "Dhoom 2", "Dhoom 3", "Devdas", "Doctor Strange", "Deadpool", "Django Unchained", "Dabangg", "Dabangg 2", "Dabangg 3", "Dilwale", "Dear Zindagi", "Dostana", "Delhi Belly", "Dunki", "Dream Girl", "Drive", "Deewaar", "Dil Se", "Dil To Pagal Hai", "Dil Hai Ke Manta Nahin", "Daawat E Ishq", "Desi Boyz", "Double Dhamaal", "Dil Maange More",
     
     # E
-    "Eega", "E T", "Exorcist", "Enthiran", "Edge of Tomorrow", "English Vinglish", "Ek Tha Tiger", "Ek Villain", "Ek Main Aur Ekk Tu", "Extraordinary Measures", "Ek Chhotisi Love Story", "English Babu Desi Mem", "Elite", "Escape Plan", "Erin Brockovich", "Eight Mile", "Enemy", "Ek Tha Raja", "Ek Doctor Ki Maut", "Everything Everywhere All At Once",
+    "Eega", "E T", "Exorcist", "Enthiran", "Entertainment" "Edge of Tomorrow", "English Vinglish", "Ek Tha Tiger", "Ek Villain", "Ek Main Aur Ekk Tu", "Extraordinary Measures", "Ek Chhotisi Love Story", "English Babu Desi Mem", "Elite", "Escape Plan", "Erin Brockovich", "Eight Mile", "Enemy", "Ek Tha Raja", "Ek Doctor Ki Maut", "Everything Everywhere All At Once",
     
     # F
     "Forrest Gump", "Fast and Furious", "Furious 7", "Fast Five", "Finding Nemo", "Frozen", "Frozen 2", "Fan", "Fifty Shades of Grey", "Fanaa", "Fukrey", "Fukrey Returns", "Fight Club", "Fantastic Beasts", "Fantastic Four", "Fireproof", "Field of Dreams", "Final Destination", "First Blood", "Forrest Gump", "Fly Away", "Fida", "Family", "Faltu", "Free Guy", "Fitoor",
