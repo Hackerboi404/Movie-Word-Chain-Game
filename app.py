@@ -1,235 +1,298 @@
+import asyncio
+import logging
 import os
 import random
-import logging
-import threading
-import json
-from flask import Flask, jsonify, request, abort
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackContext, Filters
-from telegram.ext import Application
+import re
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+
+# Flask imports for Render Web Service
+from flask import Flask
 
 # --- CONFIGURATION ---
-TOKEN = os.environ.get("TOKEN", "YOUR_BOT_TOKEN_HERE")  # Render env var prefer karega
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    print("Error: BOT_TOKEN not found in environment variables.")
+    exit(1)
 
+# --- DATA IMPORT ---
+from data import MOVIES
+
+# --- FLASK APP SETUP (Keep Alive) ---
 app = Flask(__name__)
 
-# --- SETUP TELEGRAM APPLICATION (v20+) ---
-# V20 mein Application hi base hota hai
-application = Application.builder().token(TOKEN).build()
+@app.route('/')
+def home():
+    return "Bot is running!"
 
-# Dispatcher access (v20 style)
-dispatcher = application.dispatcher
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
 
-# --- GAME STATE ---
-# Structure: { chat_id: { 'is_active': bool, 'round': int, 'current_q': (dialogue, movie), 'scores': {user_id: {'name': str, 'points': int}}, 'timer_lock': bool } }
-game_state = {}
+# --- BOT & GAME STATE ---
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
 
-# --- IMPORT DIALOGUES ---
-try:
-    from dialogues import DIALOGUES
-except ImportError:
-    print("dialogues.py not found! Using dummy data.")
-    DIALOGUES = [("Test dialogue", "Test Movie")]
+# In-memory Game State
+games = {}
 
 # --- HELPER FUNCTIONS ---
 
-def get_leaderboard_text(chat_id):
-    if chat_id not in game_state:
-        return "No game played yet."
-    
-    state = game_state[chat_id]
-    scores = state['scores']
-    
-    if not scores:
-        return "No scores yet!"
+def get_game(chat_id):
+    return games.get(chat_id)
 
-    # Sort users by score (descending)
-    # scores dict: { user_id: {'name': 'Name', 'points': 10} }
-    sorted_scores = sorted(scores.values(), key=lambda x: x['points'], reverse=True)
+def clean_string(text):
+    """Remove spaces and special chars to check letters"""
+    return re.sub(r'[^a-zA-Z]', '', text).lower()
+
+def get_last_letter(movie_name):
+    cleaned = clean_string(movie_name)
+    if not cleaned:
+        return None
+    return cleaned[-1].upper()
+
+def normalize_movie(name):
+    """
+    Normalize movie name for comparison.
+    1. Strip whitespace.
+    2. Convert to Title Case (e.g., golmaal -> Golmaal).
+    """
+    return name.strip().title()
+
+async def next_turn(chat_id):
+    game = get_game(chat_id)
+    if not game or not game['is_active']:
+        return
+
+    # Check for winner (only 1 player left)
+    if len(game['players']) == 1:
+        winner = game['players'][0]
+        await bot.send_message(chat_id, f"🏆 <b>GAME OVER!</b>\n\n👑 Winner: {winner.mention_html()}\n\nCongratulations!")
+        del games[chat_id]
+        return
+
+    # Move to next player index (looping)
+    game['current_idx'] = (game['current_idx'] + 1) % len(game['players'])
+    current_player = game['players'][game['current_idx']]
+
+    # Tag the player and show the letter
+    game['current_letter'] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') if game['current_letter'] == '' else game['current_letter']
     
-    text = "🏆 <b>FINAL LEADERBOARD</b> 🏆\n\n"
-    rank = 1
-    for user_data in sorted_scores:
-        name = user_data['name']
-        pts = user_data['points']
-        text += f"{rank}. {name} - {pts} pts\n"
-        rank += 1
+    msg = f"🎬 <b>{current_player.full_name}'s Turn!</b>\n"
+    msg += f"🔤 Send a movie starting with: <b>'{game['current_letter']}'</b>"
+    
+    await bot.send_message(chat_id, msg)
+
+    # Set Timer (35 seconds)
+    if game['timer_task']:
+        game['timer_task'].cancel()
+    
+    game['timer_task'] = asyncio.create_task(check_timeout(chat_id, game['current_idx'], 35))
+
+async def check_timeout(chat_id, expected_player_idx, timeout_seconds):
+    await asyncio.sleep(timeout_seconds)
+    
+    game = get_game(chat_id)
+    # Validate that game is still running and it's still the same player's turn
+    if game and game['is_active'] and game['current_idx'] == expected_player_idx:
+        # Time out - Eliminate player
+        eliminated_player = game['players'].pop(expected_player_idx)
+        await bot.send_message(chat_id, f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
         
-    return text
+        # Adjust index so we don't skip the next person after popping
+        game['current_idx'] = expected_player_idx - 1 
+        await next_turn(chat_id)
 
-def end_game(chat_id):
-    if chat_id not in game_state:
-        return
+# --- HANDLERS ---
 
-    # Mark game as inactive
-    game_state[chat_id]['is_active'] = False
-    
-    # Send Leaderboard
-    lb_text = get_leaderboard_text(chat_id)
-    application.bot.send_message(chat_id=chat_id, text=lb_text, parse_mode='HTML')
-    
-    # Clean up memory
-    del game_state[chat_id]
-
-def send_next_question(chat_id):
-    if chat_id not in game_state or not game_state[chat_id]['is_active']:
-        return
-
-    state = game_state[chat_id]
-    current_round = state['round']
-
-    if current_round > 10:
-        end_game(chat_id)
-        return
-
-    # Pick a random dialogue
-    dialogue, movie = random.choice(DIALOGUES)
-    state['current_q'] = (dialogue, movie)
-    
-    # Send Question
-    msg = f"🎬 <b>Round {current_round}/10</b>\n\n"
-    msg += f"🗣️ Dialogue: <i>\"{dialogue}\"</i>\n\n"
-    msg += "Guess the Movie! 🧐"
-    
-    application.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
-
-    # Start Timer for this round (30 seconds)
-    # Hum timer function ke andar check karenge ki kya answer mil gaya hai ya nahi
-    # Agar round number badh gaya ho, matlab answer mil gaya tha.
-    
-    def timeout_handler():
-        # Check if game is still active and round hasn't changed (meaning answer wasn't given)
-        if chat_id in game_state and \
-           game_state[chat_id]['is_active'] and \
-           game_state[chat_id]['round'] == current_round:
-            
-            application.bot.send_message(chat_id=chat_id, text="⏰ Time's up! No one guessed it.\nNext round...")
-            
-            # Move to next round
-            game_state[chat_id]['round'] += 1
-            send_next_question(chat_id)
-
-    # Schedule the timeout (30.0 seconds)
-    t = threading.Timer(30.0, timeout_handler)
-    t.start()
-
-
-# --- COMMAND HANDLERS ---
-
-def start_game(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    
-    # Check if game is already running
-    if chat_id in game_state and game_state[chat_id]['is_active']:
-        context.bot.send_message(chat_id=chat_id, text="⚠️ Game is already running! Wait for it to finish.")
-        return
-
-    context.bot.send_message(chat_id=chat_id, text="🎮 <b>Bollywood Dialogue Quiz</b> Started!\n\n10 Rounds.\n30 Seconds per round.\nFirst correct answer gets +10 Points.", parse_mode='HTML')
-    
-    # Initialize Game State
-    game_state[chat_id] = {
-        'is_active': True,
-        'round': 1,
-        'current_q': None,
-        'scores': {} 
-    }
-    
-    # Start First Question
-    send_next_question(chat_id)
-
-def help_cmd(update: Update, context: CallbackContext):
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
     text = (
-        "<b>How to Play:</b>\n"
-        "1. Type <code>/playgame</code> to start.\n"
-        "2. I will send a Bollywood dialogue.\n"
-        "3. Reply with the <b>Movie Name</b>.\n"
-        "4. First correct answer = +10 Points.\n"
-        "5. Game ends after 10 rounds."
+        "🎬 <b>Movie Word Chain Game</b>\n\n"
+        "📜 <b>Rules:</b>\n"
+        "1. Join with /join\n"
+        "2. Start game with <b>/playgame</b>\n"  # Updated text
+        "3. Send a movie name starting with the last letter of the previous movie.\n"
+        "4. Valid movies only (based on database).\n"
+        "5. <b>35 seconds</b> per turn.\n\n"
+        "Commands:\n"
+        "/join - Join game\n"
+        "/leave - Leave game\n"
+        "/players - See players\n"
+        "/playgame - Start Game\n" # Updated command list
+        "/stopgame - Stop"
     )
-    update.message.reply_text(text, parse_mode='HTML')
+    await message.answer(text)
 
+@dp.message(Command("join"))
+async def cmd_join(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    user_id = user.id
 
-# --- MESSAGE HANDLERS (GUESSING) ---
-
-def handle_guess(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    user = update.effective_user
+    if not chat_id in games:
+        games[chat_id] = {
+            'players': [],
+            'used_movies': [], # Will store normalized names (Title Case)
+            'current_letter': '',
+            'is_active': False,
+            'timer_task': None,
+            'current_idx': 0
+        }
     
-    # Check if game is active in this chat
-    if chat_id not in game_state or not game_state[chat_id]['is_active']:
+    game = games[chat_id]
+
+    # Check if already joined
+    for p in game['players']:
+        if p.id == user_id:
+            await message.answer("⚠️ You are already in the game!")
+            return
+
+    game['players'].append(user)
+    await message.answer(f"✅ {user.full_name} joined the game!")
+
+@dp.message(Command("leave"))
+async def cmd_leave(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    
+    game = get_game(chat_id)
+    if not game:
         return
 
-    guess = update.message.text.strip().lower()
-    state = game_state[chat_id]
-    correct_movie = state['current_q'][1].lower()
+    # Remove player
+    for i, p in enumerate(game['players']):
+        if p.id == user.id:
+            game['players'].pop(i)
+            await message.answer(f"👋 {user.full_name} left the game.")
+            
+            # If it was their turn, move to next
+            if game['is_active'] and game['current_idx'] == i:
+                 game['current_idx'] = i - 1 # Logic adjustment in next_turn
+                 await next_turn(chat_id)
+            elif game['is_active'] and game['current_idx'] > i:
+                 game['current_idx'] -= 1 # Shift index if someone before them left
+            
+            # Check win condition if empty
+            if game['is_active'] and len(game['players']) < 2:
+                await bot.send_message(chat_id, "Not enough players. Game stopped.")
+                game['is_active'] = False
+            return
 
-    # Logic: Agar guess correct movie mein hai ya correct movie guess mein hai
-    if guess in correct_movie or correct_movie in guess:
-        
-        # Correct Answer!
-        
-        # 1. Update Round (This stops the timer automatically)
-        state['round'] += 1
-        
-        # 2. Award Points
-        user_id = user.id
-        if user_id not in state['scores']:
-            state['scores'][user_id] = {
-                'name': user.first_name,
-                'points': 0
-            }
-        
-        state['scores'][user_id]['points'] += 10
-        
-        winner_name = user.first_name
-        correct_answer_full = state['current_q'][1]
-        
-        # 3. Send Success Message
-        reply = f"✅ <b>Correct!</b>\nAnswer: {correct_answer_full}\n\n🏆 +10 Points to {winner_name}"
-        context.bot.send_message(chat_id=chat_id, text=reply, parse_mode='HTML')
-        
-        # 4. Move to next round
-        send_next_question(chat_id)
+    await message.answer("You are not in the game.")
+
+@dp.message(Command("players"))
+async def cmd_players(message: types.Message):
+    game = get_game(message.chat.id)
+    if not game or not game['players']:
+        await message.answer("No players joined yet.")
+        return
+    
+    names = "\n".join([f"{i+1}. {p.full_name}" for i, p in enumerate(game['players'])])
+    await message.answer(f"👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
+
+@dp.message(Command("playgame")) # CHANGED FROM startgame to playgame
+async def cmd_playgame(message: types.Message):
+    chat_id = message.chat.id
+    game = get_game(chat_id)
+    
+    if not game or len(game['players']) < 2:
+        await message.answer("❌ Need at least 2 players to start! Use /join")
+        return
+    
+    if game['is_active']:
+        await message.answer("Game is already running!")
+        return
+
+    game['is_active'] = True
+    game['used_movies'] = []
+    game['current_letter'] = '' 
+    
+    await message.answer("🎲 <b>Game Started!</b>\nLet's pick who goes first...")
+    
+    random.shuffle(game['players'])
+    game['current_idx'] = -1 
+    
+    await next_turn(chat_id)
+
+@dp.message(Command("stopgame"))
+async def cmd_stopgame(message: types.Message):
+    chat_id = message.chat.id
+    if chat_id in games:
+        games[chat_id]['is_active'] = False
+        if games[chat_id]['timer_task']:
+            games[chat_id]['timer_task'].cancel()
+        del games[chat_id]
+        await message.answer("🛑 Game stopped.")
     else:
-        # Wrong answer, ignore (spam prevention)
-        pass
+        await message.answer("No game running.")
 
+# --- GAMEPLAY LOGIC ---
 
-# --- ERROR HANDLING ---
-def error(update: Update, context: CallbackContext):
-    logger = logging.getLogger(__name__)
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
+@dp.message()
+async def handle_game_input(message: types.Message):
+    chat_id = message.chat.id
+    user = message.from_user
+    text = message.text
 
+    game = get_game(chat_id)
+    
+    if not game or not game['is_active']:
+        return
 
-# --- ROUTES ---
+    # Check if it is this user's turn
+    current_player = game['players'][game['current_idx']]
+    if user.id != current_player.id:
+        return
 
-@app.route('/')
-def index():
-    return "Bot is running!"
+    # Normalization logic: "golmaal" becomes "Golmaal"
+    normalized_name = normalize_movie(text)
+    
+    # 1. Check if it's a valid movie from DB
+    # The MOVIES list in data.py is Title Case, so direct check works
+    if normalized_name not in MOVIES:
+        await message.reply("❌ Invalid or unknown movie. Try another.")
+        return
 
-@app.route(f"/{TOKEN}", methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = Update.de_json(json_string, application.bot)
-        dispatcher.process_update(update)
-        return jsonify({"status": "ok"})
-    else:
-        abort(403)
+    # 2. Check if already used
+    if normalized_name in game['used_movies']:
+        await message.reply("🔄 This movie was already used! Pick another.")
+        return
 
-# --- SETUP ---
-dispatcher.add_handler(CommandHandler("start", help_cmd))
-dispatcher.add_handler(CommandHandler("playgame", start_game))
-dispatcher.add_handler(CommandHandler("help", help_cmd))
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_guess))
+    # 3. Check First Letter
+    # We compare the first letter of normalized name (Title Case) vs current letter
+    if game['current_letter']:
+        if normalized_name[0] != game['current_letter']:
+            await message.reply(f"🔤 Must start with letter <b>'{game['current_letter']}'</b>!")
+            return
 
-dispatcher.add_error_handler(error)
+    # SUCCESSFUL TURN
+    if game['timer_task']:
+        game['timer_task'].cancel()
+
+    game['used_movies'].append(normalized_name)
+    last_char = get_last_letter(normalized_name)
+    game['current_letter'] = last_char
+
+    await message.reply(f"✅ <b>{normalized_name}</b> accepted!\n\nNext letter: <b>'{last_char}'</b>")
+
+    await next_turn(chat_id)
+
+# --- MAIN EXECUTION ---
+
+async def main():
+    import threading
+    t = threading.Thread(target=run_flask)
+    t.start()
+    print("Bot started polling with 35s timer...")
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    # Run the app
-    # Note: v20 doesn't use start_polling here, webhook is handled by route
-    # Hum logging bhi on kar sakte hain
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-    
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped")
