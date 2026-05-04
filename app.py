@@ -19,7 +19,6 @@ if not BOT_TOKEN:
     exit(1)
 
 # --- DATA IMPORT ---
-# Hum MOVIE_SET import karenge (jo lowercase set hai) taaki comparison fast aur accurate ho
 from data import MOVIE_SET, MOVIES
 
 # --- FLASK APP SETUP (Keep Alive) ---
@@ -71,6 +70,7 @@ async def next_turn(chat_id):
     # Check for winner (only 1 player left)
     if len(game['players']) == 1:
         winner = game['players'][0]
+        # Using mention_html for better tagging
         await bot.send_message(chat_id, f"🏆 <b>GAME OVER!</b>\n\n👑 Winner: {winner.mention_html()}\n\nCongratulations!")
         del games[chat_id]
         return
@@ -82,7 +82,8 @@ async def next_turn(chat_id):
     # Tag the player and show the letter
     game['current_letter'] = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') if game['current_letter'] == '' else game['current_letter']
     
-    msg = f"🎬 <b>{current_player.full_name}'s Turn!</b>\n"
+    # IMPROVED TAGGING & SPACING
+    msg = f"🎬 <b>{current_player.full_name}'s Turn!</b>\n\n"
     msg += f"🔤 Send a movie starting with: <b>'{game['current_letter']}'</b>"
     
     await bot.send_message(chat_id, msg)
@@ -101,7 +102,8 @@ async def check_timeout(chat_id, expected_player_idx, timeout_seconds):
     if game and game['is_active'] and game['current_idx'] == expected_player_idx:
         # Time out - Eliminate player
         eliminated_player = game['players'].pop(expected_player_idx)
-        await message.reply(f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
+        # Fixed: Use mention_html for proper tagging in timeout
+        await bot.send_message(chat_id, f"⏱️ <b>Time's Up!</b>\n😢 {eliminated_player.mention_html()} eliminated for being too slow!")
         
         # Adjust index so we don't skip the next person after popping
         game['current_idx'] = expected_player_idx - 1 
@@ -137,7 +139,7 @@ async def cmd_join(message: types.Message):
     if not chat_id in games:
         games[chat_id] = {
             'players': [],
-            'used_movies': [], # Will store normalized names (Title Case)
+            'used_movies': [], 
             'current_letter': '',
             'is_active': False,
             'timer_task': None,
@@ -164,6 +166,17 @@ async def cmd_leave(message: types.Message):
     if not game:
         return
 
+    # Check if user is in the game
+    user_in_game = False
+    for p in game['players']:
+        if p.id == user.id:
+            user_in_game = True
+            break
+
+    if not user_in_game:
+        await message.answer("❌ You are not part of the game.")
+        return
+
     # Remove player
     for i, p in enumerate(game['players']):
         if p.id == user.id:
@@ -183,8 +196,6 @@ async def cmd_leave(message: types.Message):
                 game['is_active'] = False
             return
 
-    await message.answer("You are not in the game.")
-
 @dp.message(Command("players"))
 async def cmd_players(message: types.Message):
     game = get_game(message.chat.id)
@@ -192,6 +203,7 @@ async def cmd_players(message: types.Message):
         await message.answer("No players joined yet.")
         return
     
+    # Added better formatting with newlines
     names = "\n".join([f"{i+1}. {p.full_name}" for i, p in enumerate(game['players'])])
     await message.answer(f"👥 <b>Current Players ({len(game['players'])}):</b>\n\n{names}")
 
@@ -253,7 +265,6 @@ async def handle_game_input(message: types.Message):
     normalized_name = normalize_movie(text)
     
     # 1. Check if it's a valid movie from DB using SET (Case Insensitive)
-    # "Titanic", "titanic", "TITANIC" -> .lower() -> check in MOVIE_SET
     if text.strip().lower() not in MOVIE_SET:
         await message.reply("❌ Invalid or unknown movie. Try another.")
         return
@@ -278,6 +289,7 @@ async def handle_game_input(message: types.Message):
     last_char = get_last_letter(normalized_name)
     game['current_letter'] = last_char
 
+    # Improved spacing for reply
     await message.reply(f"✅ <b>{normalized_name}</b> accepted!\n\nNext letter: <b>'{last_char}'</b>")
 
     await next_turn(chat_id)
